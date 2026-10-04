@@ -24,10 +24,10 @@ Based on CachyOS server kernel, with hardware-specific fixes used by this system
 ```nix
 nix.settings = {
   substituters = [
-    "https://<cache-name>.cachix.org"
+    "https://linux-ms-7e79.cachix.org"
   ];
   trusted-public-keys = [
-    "<cache-name>.cachix.org-1:<public-key>"
+    "linux-ms-7e79.cachix.org-1:Hiw1TafR4Iz0jms+KoR4KadeOWAqqjHxAfsjqsIM7HE="
   ];
 };
 ```

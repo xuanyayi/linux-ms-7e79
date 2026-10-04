@@ -6,6 +6,15 @@
     cachyos-upstream.url = "github:xddxdd/nix-cachyos-kernel";
   };
 
+  nixConfig = {
+    extra-substituters = [
+      "https://linux-ms-7e79.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "linux-ms-7e79.cachix.org-1:Hiw1TafR4Iz0jms+KoR4KadeOWAqqjHxAfsjqsIM7HE="
+    ];
+  };
+
   outputs =
     {
       self,
