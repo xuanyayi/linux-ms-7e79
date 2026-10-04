@@ -1,0 +1,78 @@
+name: Update & Build Patched CachyOS Server Kernel
+
+'on':
+  schedule:
+    # Run daily at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if upstream has no changes'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v9
+
+      - name: Install Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ secrets.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Check for upstream updates
+        id: check_update
+        run: |
+          set -euo pipefail
+          OLD_LOCK_HASH=$(sha256sum flake.lock | cut -d ' ' -f 1)
+
+          echo "Updating upstream flake inputs..."
+          nix flake update cachyos-upstream
+
+          NEW_LOCK_HASH=$(sha256sum flake.lock | cut -d ' ' -f 1)
+
+          if [ "$OLD_LOCK_HASH" = "$NEW_LOCK_HASH" ] && [ "${{ github.event.inputs.force_build }}" != "true" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream changes detected and force_build not set. Exiting without building."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream changes detected (or force_build requested). Proceeding to build."
+          fi
+
+      - name: Build patched kernel and push closure to Cachix
+        if: steps.check_update.outputs.has_changes == 'true'
+        run: |
+          set -euo pipefail
+          CACHE_NAME="${{ secrets.CACHIX_CACHE_NAME }}"
+
+          echo "Building kernel and pushing to Cachix (${CACHE_NAME})..."
+          cachix watch-exec "$CACHE_NAME" -- nix build .#kernel --print-build-logs
+
+      - name: Commit and push updated flake.lock
+        if: steps.check_update.outputs.has_changes == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          KERNEL_VER=$(nix eval --raw .#packages.x86_64-linux.kernel.version 2>/dev/null || echo "latest")
+
+          git add flake.lock
+          git commit -m "chore(flake.lock): update cachyos server kernel to ${KERNEL_VER}"
+          git push origin main

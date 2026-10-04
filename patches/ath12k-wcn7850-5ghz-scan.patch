@@ -1,0 +1,31 @@
+diff --git a/drivers/net/wireless/ath/ath12k/reg.c b/drivers/net/wireless/ath/ath12k/reg.c
+index 2dfcef013277..2d9adc74ac6e 100644
+--- a/drivers/net/wireless/ath/ath12k/reg.c
++++ b/drivers/net/wireless/ath/ath12k/reg.c
+@@ -153,12 +153,6 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
+ 			if (bands[band]->channels[i].flags &
+ 			    IEEE80211_CHAN_DISABLED)
+ 				continue;
+-			/* Skip Channels that are not in current radio's range */
+-			if (bands[band]->channels[i].center_freq <
+-			    KHZ_TO_MHZ(ar->freq_range.start_freq) ||
+-			    bands[band]->channels[i].center_freq >
+-			    KHZ_TO_MHZ(ar->freq_range.end_freq))
+-				continue;
+
+ 			num_channels++;
+ 		}
+@@ -190,13 +184,6 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
+ 			if (channel->flags & IEEE80211_CHAN_DISABLED)
+ 				continue;
+
+-			/* Skip Channels that are not in current radio's range */
+-			if (bands[band]->channels[i].center_freq <
+-			    KHZ_TO_MHZ(ar->freq_range.start_freq) ||
+-			    bands[band]->channels[i].center_freq >
+-			    KHZ_TO_MHZ(ar->freq_range.end_freq))
+-				continue;
+-
+ 			/* TODO: Set to true/false based on some condition? */
+ 			ch->allow_ht = true;
+ 			ch->allow_vht = true;
