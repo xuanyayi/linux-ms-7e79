@@ -68,6 +68,7 @@
       packages = forAllSystems (system: {
         kernel = self.legacyPackages.${system}.patchedKernel;
         default = self.legacyPackages.${system}.patchedKernel;
+        nct6687d = self.legacyPackages.${system}.kernelPackages.nct6687d;
       });
 
       overlays.default = final: prev: {

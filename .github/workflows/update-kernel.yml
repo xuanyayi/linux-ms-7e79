@@ -55,14 +55,14 @@ jobs:
             echo "Upstream changes detected (or force_build requested). Proceeding to build."
           fi
 
-      - name: Build patched kernel and push closure to Cachix
+      - name: Build patched kernel, modules and push closure to Cachix
         if: steps.check_update.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
           CACHE_NAME="${{ secrets.CACHIX_CACHE_NAME }}"
 
-          echo "Building kernel and pushing to Cachix (${CACHE_NAME})..."
-          cachix watch-exec "$CACHE_NAME" -- nix build .#kernel --print-build-logs
+          echo "Building kernel, nct6687d, and pushing to Cachix (${CACHE_NAME})..."
+          cachix watch-exec "$CACHE_NAME" -- nix build .#kernel .#nct6687d --print-build-logs
 
       - name: Commit and push updated flake.lock
         if: steps.check_update.outputs.has_changes == 'true'
