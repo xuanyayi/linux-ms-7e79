@@ -15,39 +15,48 @@ name: Update & Build Patched CachyOS Server Kernel
 permissions:
   contents: write
 
+concurrency:
+  group: kernel-update
+  cancel-in-progress: false
+
+env:
+  NIX_CONFIG: |
+    accept-flake-config = false
+    require-sigs = true
+    sandbox = true
+    substituters = https://cache.nixos.org https://linux-ms-7e79.cachix.org
+    extra-substituters =
+    trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= linux-ms-7e79.cachix.org-1:Hiw1TafR4Iz0jms+KoR4KadeOWAqqjHxAfsjqsIM7HE=
+    extra-trusted-public-keys =
+
 jobs:
   update-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 330
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
+        uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
 
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v9
-
-      - name: Install Cachix
-        uses: cachix/cachix-action@v15
-        with:
-          name: ${{ secrets.CACHIX_CACHE_NAME }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Check for upstream updates
+      - name: Check official sources and Nixpkgs updates
         id: check_update
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          OLD_LOCK_HASH=$(sha256sum flake.lock | cut -d ' ' -f 1)
+          OLD_STATE_HASH=$(sha256sum flake.lock kernel/sources.json | sha256sum | cut -d ' ' -f 1)
 
-          echo "Updating upstream flake inputs..."
-          nix flake update cachyos-upstream
+          nix flake update nixpkgs
+          nix develop --command python3 -m unittest discover -s tests -v
+          nix develop --command python3 scripts/update-kernel.py
 
-          NEW_LOCK_HASH=$(sha256sum flake.lock | cut -d ' ' -f 1)
+          NEW_STATE_HASH=$(sha256sum flake.lock kernel/sources.json | sha256sum | cut -d ' ' -f 1)
 
-          if [ "$OLD_LOCK_HASH" = "$NEW_LOCK_HASH" ] && [ "${{ github.event.inputs.force_build }}" != "true" ]; then
+          if [ "$OLD_STATE_HASH" = "$NEW_STATE_HASH" ] && [ "${{ github.event.inputs.force_build }}" != "true" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No upstream changes detected and force_build not set. Exiting without building."
           else
@@ -55,16 +64,27 @@ jobs:
             echo "Upstream changes detected (or force_build requested). Proceeding to build."
           fi
 
-      - name: Build patched kernel, modules and push closure to Cachix
+      - name: Enable KVM for the NixOS boot test
+        if: steps.check_update.outputs.has_changes == 'true'
+        run: sudo chmod a+rw /dev/kvm
+
+      - name: Build kernel and modules and verify boot
         if: steps.check_update.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
-          CACHE_NAME="${{ secrets.CACHIX_CACHE_NAME }}"
+          nix build '.#kernel^*' .#nct6687d --no-link --print-build-logs --print-out-paths > "$RUNNER_TEMP/kernel-outputs"
+          nix flake check --print-build-logs
 
-          echo "Building kernel, nct6687d, and pushing to Cachix (${CACHE_NAME})..."
-          cachix watch-exec "$CACHE_NAME" -- nix build .#kernel .#nct6687d --print-build-logs
+      - name: Publish verified outputs to Cachix
+        if: steps.check_update.outputs.has_changes == 'true'
+        env:
+          CACHIX_CACHE_NAME: ${{ secrets.CACHIX_CACHE_NAME }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          nix develop --command cachix push "$CACHIX_CACHE_NAME" < "$RUNNER_TEMP/kernel-outputs"
 
-      - name: Commit and push updated flake.lock
+      - name: Commit and push verified source and dependency pins
         if: steps.check_update.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
@@ -73,10 +93,10 @@ jobs:
 
           KERNEL_VER=$(nix eval --raw .#packages.x86_64-linux.kernel.version 2>/dev/null || echo "latest")
 
-          git add flake.lock
+          git add flake.lock kernel/sources.json
           if ! git diff --staged --quiet; then
-            git commit -m "chore(flake.lock): update cachyos server kernel to ${KERNEL_VER}"
+            git commit -m "chore: update cachyos server kernel ${KERNEL_VER} inputs"
             git push origin main
           else
-            echo "No changes in flake.lock to commit."
+            echo "No source or dependency changes to commit."
           fi

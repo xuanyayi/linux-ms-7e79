@@ -2,8 +2,7 @@
   description = "Linux kernel builds and hardware fixes for MSI MS-7E79 (MPG B850I EDGE TI WIFI)";
 
   inputs = {
-    nixpkgs.follows = "cachyos-upstream/nixpkgs";
-    cachyos-upstream.url = "github:xddxdd/nix-cachyos-kernel";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable-small";
   };
 
   nixConfig = {
@@ -19,7 +18,6 @@
     {
       self,
       nixpkgs,
-      cachyos-upstream,
     }:
     let
       supportedSystems = [ "x86_64-linux" ];
@@ -33,29 +31,14 @@
             inherit system;
             config.allowUnfree = true;
           };
-          inherit (pkgs) lib;
-
-          # Base CachyOS server kernel from upstream
-          baseServerKernel = cachyos-upstream.legacyPackages.${system}.linux-cachyos-server;
-
-          # Custom server kernel configuration for MS-7E79:
-          # - EEVDF scheduler (server default)
-          # - PREEMPT_LAZY with dynamic preemption
-          # - 300 Hz timer frequency
-          # - NO_HZ_FULL tickless
-          # - GCC build (no LLVM LTO)
-          # - MS-7E79 hardware fixes:
-          #   1. WCN7850 dynamic user regulatory hints
-          #   2. WCN7850 5 GHz channel scan frequency range fix
-          patchedKernel = baseServerKernel.override {
-            preemptType = "lazy";
-            tickrate = "full";
-            structuredExtraConfig = {
-              ATH_REG_DYNAMIC_USER_REG_HINTS = lib.kernel.yes;
-            };
-            patches = [
-              ./patches/ath12k-wcn7850-5ghz-scan.patch
-            ];
+          patchedKernel = import ./kernel {
+            inherit (pkgs)
+              lib
+              buildLinux
+              fetchurl
+              applyPatches
+              kernelPatches
+              ;
           };
 
           kernelPackages = pkgs.linuxKernel.packagesFor patchedKernel;
@@ -71,16 +54,44 @@
         nct6687d = self.legacyPackages.${system}.kernelPackages.nct6687d;
       });
 
+      devShells = forAllSystems (system: {
+        default = nixpkgs.legacyPackages.${system}.mkShellNoCC {
+          packages = with nixpkgs.legacyPackages.${system}; [
+            python3
+            gnupg
+            cachix
+          ];
+        };
+      });
+
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
+      checks = forAllSystems (system: {
+        boot = import ./tests/boot.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          kernelPackages = self.legacyPackages.${system}.kernelPackages;
+        };
+        updater =
+          nixpkgs.legacyPackages.${system}.runCommand "kernel-updater-tests"
+            {
+              nativeBuildInputs = [ nixpkgs.legacyPackages.${system}.python3 ];
+              UPDATER_SCRIPT = ./scripts/update-kernel.py;
+            }
+            ''
+              export PYTHONDONTWRITEBYTECODE=1
+              python3 -m unittest discover -s ${./tests} -p 'test_*.py' -v
+              touch "$out"
+            '';
+      });
+
       overlays.default = final: prev: {
-        linuxPackages_ms_7e79 =
-          self.legacyPackages.${final.stdenv.hostPlatform.system}.kernelPackages;
+        linuxPackages_ms_7e79 = self.legacyPackages.${final.stdenv.hostPlatform.system}.kernelPackages;
       };
 
       nixosModules.default =
         { pkgs, ... }:
         {
-          boot.kernelPackages =
-            self.legacyPackages.${pkgs.stdenv.hostPlatform.system}.kernelPackages;
+          boot.kernelPackages = self.legacyPackages.${pkgs.stdenv.hostPlatform.system}.kernelPackages;
         };
     };
 }
