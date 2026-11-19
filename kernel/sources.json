@@ -1,7 +1,7 @@
 {
   "version": "7.3.5",
-  "release": "cachyos-7.3.5-1",
-  "sourceHash": "sha256-WV4ju8wqqU8eSDTcpL0V4fgkwosa5bJHRJwTaRGdrco=",
+  "release": "cachyos-7.3.5-2",
+  "sourceHash": "sha256-uyKtmeEEL66IO6txNm+DOTZ7dMBFAE/pKtSSMzkJLgc=",
   "configRev": "780dd8d6a2e611e3bdca15652845bb635c1fbd7f",
   "configHash": "sha256-ZFljMB3bv37+lN3rjqRKJl+reUYufr4688YKlP17Peg="
 }
